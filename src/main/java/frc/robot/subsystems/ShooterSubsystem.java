@@ -28,9 +28,9 @@ public class ShooterSubsystem extends SubsystemBase {
   private double m_targetSpeedRpm = 0.0;
   private double m_lastDistance = 0.0;
   private double m_lastAppliedkP = ShooterConstants.kP;
-private double m_lastAppliedkI = ShooterConstants.kI;
-private double m_lastAppliedkD = ShooterConstants.kD;
-private double m_lastAppliedkFF = ShooterConstants.kFF;
+  private double m_lastAppliedkI = ShooterConstants.kI;
+  private double m_lastAppliedkD = ShooterConstants.kD;
+  private double m_lastAppliedkFF = ShooterConstants.kFF;
 
   public ShooterSubsystem() {
     m_shooterMotor = new SparkMax(ShooterConstants.kShooterCanId, MotorType.kBrushless);
@@ -114,10 +114,9 @@ private double m_lastAppliedkFF = ShooterConstants.kFF;
     m_targetSpeedRpm = MathUtil.clamp(speedRpm, 0.0, ShooterConstants.kMaxShooterRpm);
   }
 
-public void runShooter() {
-  m_shooterPID.setSetpoint(m_targetSpeedRpm, ControlType.kVelocity);
-}
-
+  public void runShooter() {
+    m_shooterPID.setSetpoint(m_targetSpeedRpm, ControlType.kVelocity);
+  }
 
   public void stopShooter() {
     m_targetSpeedRpm = 0.0;
@@ -153,28 +152,40 @@ public void runShooter() {
     stopAgitator();
   }
 
+    public double getActualShooterRpm() {
+    return m_shooterMotor.getEncoder().getVelocity();
+  }
+
+  public double getTargetShooterRpm() {
+    return m_targetSpeedRpm;
+  }
+
+  public boolean isShooterAtSpeed(double toleranceRpm) {
+    return Math.abs(getActualShooterRpm() - getTargetShooterRpm()) <= toleranceRpm;
+  }
+
   @Override
   public void periodic() {
     double kP = SmartDashboard.getNumber("Shooter/kP", ShooterConstants.kP);
-double kI = SmartDashboard.getNumber("Shooter/kI", ShooterConstants.kI);
-double kD = SmartDashboard.getNumber("Shooter/kD", ShooterConstants.kD);
-double kFF = SmartDashboard.getNumber("Shooter/kFF", ShooterConstants.kFF);
+    double kI = SmartDashboard.getNumber("Shooter/kI", ShooterConstants.kI);
+    double kD = SmartDashboard.getNumber("Shooter/kD", ShooterConstants.kD);
+    double kFF = SmartDashboard.getNumber("Shooter/kFF", ShooterConstants.kFF);
 
-if (kP != m_lastAppliedkP || kI != m_lastAppliedkI || kD != m_lastAppliedkD || kFF != m_lastAppliedkFF) {
-  SparkMaxConfig updatedConfig = new SparkMaxConfig();
-  updatedConfig.closedLoop.pidf(kP, kI, kD, kFF);
+    if (kP != m_lastAppliedkP || kI != m_lastAppliedkI || kD != m_lastAppliedkD || kFF != m_lastAppliedkFF) {
+      SparkMaxConfig updatedConfig = new SparkMaxConfig();
+      updatedConfig.closedLoop.pidf(kP, kI, kD, kFF);
 
-  m_shooterMotor.configure(
-      updatedConfig,
-      ResetMode.kNoResetSafeParameters,
-      PersistMode.kNoPersistParameters
-  );
+      m_shooterMotor.configure(
+          updatedConfig,
+          ResetMode.kNoResetSafeParameters,
+          PersistMode.kNoPersistParameters
+      );
 
-  m_lastAppliedkP = kP;
-  m_lastAppliedkI = kI;
-  m_lastAppliedkD = kD;
-  m_lastAppliedkFF = kFF;
-}
+      m_lastAppliedkP = kP;
+      m_lastAppliedkI = kI;
+      m_lastAppliedkD = kD;
+      m_lastAppliedkFF = kFF;
+    }
     SmartDashboard.putNumber("Shooter/Actual RPM", m_shooterMotor.getEncoder().getVelocity());
     SmartDashboard.putNumber("Shooter/Target RPM", m_targetSpeedRpm);
     SmartDashboard.putNumber("Shooter/Last Distance", m_lastDistance);

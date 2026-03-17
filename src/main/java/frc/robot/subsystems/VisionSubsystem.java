@@ -21,6 +21,8 @@ public class VisionSubsystem extends SubsystemBase {
 
     public VisionSubsystem() {
         m_limelightTable = NetworkTableInstance.getDefault().getTable("limelight");
+        SmartDashboard.putNumber("Vision/TargetSpaceX", 0.0);
+        SmartDashboard.putNumber("Vision/TargetSpaceY", 0.0);
     }
 
     @Override
@@ -30,6 +32,8 @@ public class VisionSubsystem extends SubsystemBase {
         SmartDashboard.putNumber("Vision/Pitch (ty)", getPitchOffset());
         SmartDashboard.putNumber("Vision/Distance", getDistanceToTarget());
         SmartDashboard.putNumber("Vision/TargetID", getTargetID());
+        SmartDashboard.putNumber("Vision/TargetSpaceX", getTargetSpaceX());
+        SmartDashboard.putNumber("Vision/TargetSpaceY", getTargetSpaceY());
     }
 
     // =========================
@@ -61,16 +65,23 @@ public class VisionSubsystem extends SubsystemBase {
      * Uses Limelight's targetpose_cameraspace array:
      * [x, y, z, roll, pitch, yaw]
      */
+/**
+     * Returns straight-line 3D distance from camera to target in meters.
+     * Uses Limelight's targetpose_cameraspace array:
+     * [x, y, z, roll, pitch, yaw]
+     */
     public double getDistanceToTarget() {
         if (!hasTarget()) {
             return -1.0;
         }
 
+        // targetpose_cameraspace is a 6-element array
         double[] targetPose = m_limelightTable
                 .getEntry("targetpose_cameraspace")
                 .getDoubleArray(new double[6]);
 
-        if (targetPose.length < 3) {
+        // If the array is empty or too small, abort
+        if (targetPose.length < 6) {
             return -1.0;
         }
 
@@ -78,14 +89,55 @@ public class VisionSubsystem extends SubsystemBase {
         double y = targetPose[1];
         double z = targetPose[2];
 
-        return Math.sqrt((x * x) + (y * y) + (z * z));
+        // Calculate the 3D hypotenuse. 
+        double distance = Math.sqrt((x * x) + (y * y) + (z * z));
+        
+        // If distance is perfectly 0.0, it usually means the Limelight sent dummy data
+        if (distance == 0.0) {
+            return -1.0; 
+        }
+
+        return distance;
     }
 
     /** Returns the ID of the primary AprilTag currently in view, or -1 if none */
     public int getTargetID() {
-        return (int) m_limelightTable.getEntry("tid").getInteger(-1);
+        // FIX: Limelight broadcasts tid as a double. Read as double, then cast to int!
+        return (int) m_limelightTable.getEntry("tid").getDouble(-1.0);
     }
 
+
+        /** Robot X position relative to the target, in meters, from botpose_targetspace */
+    public double getTargetSpaceX() {
+        if (!hasTarget()) {
+            return 0.0;
+        }
+
+        double[] botPoseTargetSpace =
+                m_limelightTable.getEntry("botpose_targetspace").getDoubleArray(new double[6]);
+
+        if (botPoseTargetSpace.length < 6) {
+            return 0.0;
+        }
+
+        return botPoseTargetSpace[0];
+    }
+
+    /** Robot Y position relative to the target, in meters, from botpose_targetspace */
+    public double getTargetSpaceY() {
+        if (!hasTarget()) {
+            return 0.0;
+        }
+
+        double[] botPoseTargetSpace =
+                m_limelightTable.getEntry("botpose_targetspace").getDoubleArray(new double[6]);
+
+        if (botPoseTargetSpace.length < 6) {
+            return 0.0;
+        }
+
+        return botPoseTargetSpace[1];
+    }
     // =========================
     // ODOMETRY / BOTPOSE METHODS
     // =========================
@@ -106,14 +158,15 @@ public class VisionSubsystem extends SubsystemBase {
             botposeKey = "botpose_wpired";
         }
 
-        double[] botpose = m_limelightTable.getEntry(botposeKey).getDoubleArray(new double[6]);
-        if (botpose.length < 6) {
+        // FIX: Botpose array length must be at least 7 to include pipeline latency at index 6
+        double[] botpose = m_limelightTable.getEntry(botposeKey).getDoubleArray(new double[7]);
+        if (botpose.length < 7) {
             return null;
         }
 
-        double latencyMs =
-                m_limelightTable.getEntry("tl").getDouble(0.0)
-                        + m_limelightTable.getEntry("cl").getDouble(0.0);
+        // FIX: botpose[6] is the pipeline latency in ms. 'cl' is the capture latency.
+        double latencyMs = botpose[6] + m_limelightTable.getEntry("cl").getDouble(0.0);
+        
         double timestamp = Timer.getFPGATimestamp() - (latencyMs / 1000.0);
 
         Pose2d visionPose = new Pose2d(botpose[0], botpose[1], gyroRotation);

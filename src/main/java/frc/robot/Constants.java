@@ -77,7 +77,7 @@ public final class Constants {
     public static final int kAgitatorCanId  = 14;
 
     public static final double kFeederSpeed   = 1.0;
-    public static final double kAgitatorSpeed = 0.4;
+    public static final double kAgitatorSpeed = .75;
 
     public static final double kMaxShooterSpeed = 1.0;    // 100% output
     public static final double kShooterIdleSpeed = 0.2;   // Keep spinning slow for faster spin-up
@@ -92,12 +92,29 @@ public final class Constants {
 
     // Distance to Speed Map: {Distance in Meters, Target RPM}
     public static final double[][] kDistanceMap = {
-        {1.5, 2500.0},
-        {2.5, 3500.0},
-        {3.5, 4500.0},
-        {5.0, 5500.0}
+        {1.5, 3600.0},
+        {2.5, 4400.0},
+        {3.5, 4800.0},
+        {5.0, 5700.0}
     };
   }
+
+  public static final class ClimberConstants {
+    public static final int kClimberMotorCanId = 16;
+
+    public static final int kRatchetForwardChannel = 5;
+    public static final int kRatchetReverseChannel = 4;
+
+    public static final boolean kClimberMotorInverted = true;
+
+    public static final double kClimbP = 0.0;
+    public static final double kClimbI = 0.0;
+    public static final double kClimbD = 0.0;
+
+    public static final double kMaxClimberRotations = 0.0;
+    public static final double kMinClimberRotations = 0.0;
+  }
+
 
   public static final class PickupConstants {
     // Motor CAN IDs
@@ -106,7 +123,7 @@ public final class Constants {
     public static final int kRollerCanId  = 13;
 
     // Motor Speeds
-    public static final double kIntakeSpeed       = -0.5;
+    public static final double kIntakeSpeed       = -1;
     public static final double kRollerPickupSpeed = -0.5;
     public static final double kRollerFeederSpeed =  0.1;
 

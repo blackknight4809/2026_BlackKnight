@@ -4,19 +4,21 @@
 
 package frc.robot.subsystems;
 
-import com.revrobotics.AbsoluteEncoder;
-import com.revrobotics.PersistMode;
-import com.revrobotics.ResetMode;
-import com.revrobotics.RelativeEncoder;
-import com.revrobotics.spark.SparkBase.ControlType;
-import com.revrobotics.spark.SparkClosedLoopController;
-import com.revrobotics.spark.SparkLowLevel.MotorType;
-import com.revrobotics.spark.SparkFlex;
-import com.revrobotics.spark.config.SparkFlexConfig;
+import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.kinematics.SwerveModulePosition;
 import edu.wpi.first.math.kinematics.SwerveModuleState;
-import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+
+import com.revrobotics.AbsoluteEncoder;
+import com.revrobotics.PersistMode;
+import com.revrobotics.RelativeEncoder;
+import com.revrobotics.ResetMode;
+
+import com.revrobotics.spark.SparkBase.ControlType;
+import com.revrobotics.spark.SparkClosedLoopController;
+import com.revrobotics.spark.SparkFlex;
+import com.revrobotics.spark.SparkLowLevel.MotorType;
+
 import frc.robot.Configs;
 
 public class MAXSwerveModule {
@@ -29,26 +31,17 @@ public class MAXSwerveModule {
   private final SparkClosedLoopController m_drivingClosedLoopController;
   private final SparkClosedLoopController m_turningClosedLoopController;
 
-  // Stored as a raw double in radians, exactly as the REV template does it.
   private double m_chassisAngularOffset = 0;
   private SwerveModuleState m_desiredState = new SwerveModuleState(0.0, new Rotation2d());
 
-  private final String m_name;
-
+  /**
+   * Constructs a MAXSwerveModule and configures the driving and turning motors.
+   *
+   * @param drivingCANId CAN ID for the driving motor
+   * @param turningCANId CAN ID for the turning motor
+   * @param chassisAngularOffset Angular offset of the module relative to the chassis in radians
+   */
   public MAXSwerveModule(int drivingCANId, int turningCANId, double chassisAngularOffset) {
-    this(drivingCANId, turningCANId, chassisAngularOffset, false, "Module[" + drivingCANId + "]");
-  }
-
-  public MAXSwerveModule(int drivingCANId, int turningCANId, double chassisAngularOffset,
-      boolean invertDrive) {
-    this(drivingCANId, turningCANId, chassisAngularOffset, invertDrive,
-        "Module[" + drivingCANId + "]");
-  }
-
-  public MAXSwerveModule(int drivingCANId, int turningCANId, double chassisAngularOffset,
-      boolean invertDrive, String name) {
-    m_name = name;
-
     m_drivingSpark = new SparkFlex(drivingCANId, MotorType.kBrushless);
     m_turningSpark = new SparkFlex(turningCANId, MotorType.kBrushless);
 
@@ -58,107 +51,71 @@ public class MAXSwerveModule {
     m_drivingClosedLoopController = m_drivingSpark.getClosedLoopController();
     m_turningClosedLoopController = m_turningSpark.getClosedLoopController();
 
-    // Build a per-module drive config inheriting shared settings,
-    // with per-module inversion applied where needed.
-    SparkFlexConfig driveConfig = new SparkFlexConfig();
-    driveConfig.apply(Configs.MAXSwerveModule.drivingConfig);
-    driveConfig.inverted(invertDrive);
+    m_drivingSpark.configure(
+        Configs.MAXSwerveModule.drivingConfig,
+        ResetMode.kResetSafeParameters,
+        PersistMode.kPersistParameters);
 
-    m_drivingSpark.configure(driveConfig,
-        ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
-    // turningConfig is also SparkFlexConfig now -- matches the Flex Dock turning motors
-    m_turningSpark.configure(Configs.MAXSwerveModule.turningConfig,
-        ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+    m_turningSpark.configure(
+        Configs.MAXSwerveModule.turningConfig,
+        ResetMode.kResetSafeParameters,
+        PersistMode.kPersistParameters);
 
     m_chassisAngularOffset = chassisAngularOffset;
-    m_desiredState.angle = new Rotation2d(m_turningEncoder.getPosition());
     m_drivingEncoder.setPosition(0);
   }
 
-  /** Returns the current state of the module. */
+  /**
+   * Returns the current state of the module.
+   */
   public SwerveModuleState getState() {
     return new SwerveModuleState(
         m_drivingEncoder.getVelocity(),
         new Rotation2d(m_turningEncoder.getPosition() - m_chassisAngularOffset));
   }
 
-  /** Returns the current position of the module. */
+  /**
+   * Returns the current position of the module.
+   */
   public SwerveModulePosition getPosition() {
     return new SwerveModulePosition(
         m_drivingEncoder.getPosition(),
         new Rotation2d(m_turningEncoder.getPosition() - m_chassisAngularOffset));
   }
 
-  /** Zeroes the drive encoder. */
-  public void resetEncoders() {
-    m_drivingEncoder.setPosition(0);
-  }
-
-  /** Returns the measured angle of the module. */
-  public Rotation2d getMeasuredAngle() {
-    return new Rotation2d(m_turningEncoder.getPosition() - m_chassisAngularOffset);
-  }
-
-  /** Returns the last commanded desired state. */
-  public SwerveModuleState getDesiredState() {
-    return m_desiredState;
-  }
-
   /**
    * Sets the desired state for the module.
    *
-   * Follows the REV MAXSwerve template pattern exactly:
-   * - chassisAngularOffset is a raw double throughout
-   * - optimize operates in encoder frame
-   * - turn setpoint sent as raw radians (SparkFlex wrapping handles [0, 2*PI])
-   * - m_desiredState always stores the original unmodified input
-   *
-   * @param desiredState          Desired speed and angle in robot frame.
-   * @param allowAngleWhenStopped When true, steers even at zero speed (X-lock).
+   * @param desiredState Desired speed and angle
    */
-  public void setDesiredState(SwerveModuleState desiredState, boolean allowAngleWhenStopped) {
-
-    // Apply chassis angular offset to translate into encoder frame.
+  public void setDesiredState(SwerveModuleState desiredState) {
     SwerveModuleState correctedDesiredState = new SwerveModuleState();
     correctedDesiredState.speedMetersPerSecond = desiredState.speedMetersPerSecond;
     correctedDesiredState.angle =
         desiredState.angle.plus(Rotation2d.fromRadians(m_chassisAngularOffset));
 
-    // Optimize: flip speed and angle if turning >90 degrees is the longer path.
-    SwerveModuleState optimized = SwerveModuleState.optimize(
-        correctedDesiredState,
-        new Rotation2d(m_turningEncoder.getPosition()));
+    Rotation2d currentAngle = Rotation2d.fromRadians(m_turningEncoder.getPosition());
+    SwerveModuleState optimizedState =
+        SwerveModuleState.optimize(correctedDesiredState, currentAngle);
 
-    // Cosine compensation (2025/2026 WPILib API).
-    optimized.cosineScale(new Rotation2d(m_turningEncoder.getPosition()));
+    m_drivingClosedLoopController.setSetpoint(
+        optimizedState.speedMetersPerSecond,
+        ControlType.kVelocity);
 
-    // Skip commanding the drive motor if stopped and not forcing angle (e.g. X-lock).
-    if (Math.abs(desiredState.speedMetersPerSecond) < 0.05 && !allowAngleWhenStopped) {
-      m_drivingClosedLoopController.setSetpoint(0.0, ControlType.kVelocity);
-    } else {
-      m_drivingClosedLoopController.setSetpoint(
-          optimized.speedMetersPerSecond, ControlType.kVelocity);
-    }
+    double turnSetpoint =
+        MathUtil.inputModulus(optimizedState.angle.getRadians(), 0, 2 * Math.PI);
 
-    // Send turn setpoint as raw radians -- SparkFlex position wrapping config
-    // (positionWrappingInputRange 0 to 2*PI in Configs.java) handles the wrapping.
     m_turningClosedLoopController.setSetpoint(
-        optimized.angle.getRadians(), ControlType.kPosition);
+        turnSetpoint,
+        ControlType.kPosition);
 
-    // --- DIAGNOSTICS ---
-    SmartDashboard.putNumber("Swerve/" + m_name + "/EncoderAngleDeg",
-        Math.toDegrees(m_turningEncoder.getPosition()));
-    SmartDashboard.putNumber("Swerve/" + m_name + "/DesiredAngleDeg",
-        desiredState.angle.getDegrees());
-    SmartDashboard.putNumber("Swerve/" + m_name + "/OptimizedAngleDeg",
-        optimized.angle.getDegrees());
-    SmartDashboard.putNumber("Swerve/" + m_name + "/OptimizedSpeed",
-        optimized.speedMetersPerSecond);
-    SmartDashboard.putString("Swerve/" + m_name + "/Mode",
-        optimized.speedMetersPerSecond < 0 ? "FLIPPED" : "NORMAL");
-
-    // Store the raw original input -- this is exactly what the REV template does.
-    // Do NOT store the optimized or offset-modified state here.
     m_desiredState = desiredState;
+  }
+
+  /**
+   * Zeroes the drive encoder position.
+   */
+  public void resetEncoders() {
+    m_drivingEncoder.setPosition(0);
   }
 }

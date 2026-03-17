@@ -23,7 +23,6 @@ public class PickupSubsystem extends SubsystemBase {
   }
 
   private final SparkMax m_intakeMotor;
-  private final SparkMax m_intakeMotor2;
   private final SparkMax m_rollerMotor;
 
   private final DoubleSolenoid m_pickupSolenoid;
@@ -33,22 +32,16 @@ public class PickupSubsystem extends SubsystemBase {
 
   public PickupSubsystem() {
     m_intakeMotor = new SparkMax(PickupConstants.kIntakeCanId, MotorType.kBrushed);
-    m_intakeMotor2 = new SparkMax(PickupConstants.kIntake2CanId, MotorType.kBrushed);
     m_rollerMotor = new SparkMax(PickupConstants.kRollerCanId, MotorType.kBrushless);
 
-    SparkMaxConfig intakeLeaderConfig = new SparkMaxConfig();
-    intakeLeaderConfig.smartCurrentLimit(30);
+    SparkMaxConfig intakeConfig = new SparkMaxConfig();
+    intakeConfig.smartCurrentLimit(30);
 
-    SparkMaxConfig intakeFollowerConfig = new SparkMaxConfig();
-    intakeFollowerConfig.smartCurrentLimit(30)
-                        .follow(m_intakeMotor, false);
+    SparkMaxConfig rollerConfig = new SparkMaxConfig();
+    rollerConfig.smartCurrentLimit(40);
 
-    SparkMaxConfig brushlessConfig = new SparkMaxConfig();
-    brushlessConfig.smartCurrentLimit(40);
-
-    m_intakeMotor.configure(intakeLeaderConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
-    m_intakeMotor2.configure(intakeFollowerConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
-    m_rollerMotor.configure(brushlessConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+    m_intakeMotor.configure(intakeConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+    m_rollerMotor.configure(rollerConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
     m_pickupSolenoid = new DoubleSolenoid(
         PneumaticsModuleType.REVPH,
@@ -136,7 +129,7 @@ public class PickupSubsystem extends SubsystemBase {
   public Command deployAndRunCommand() {
     return Commands.sequence(
         this.runOnce(this::extendPickup),
-        Commands.waitSeconds(0.5),
+        Commands.waitSeconds(0.25),
         this.runOnce(() -> {
           extendRoller();
           runMotors();
@@ -150,7 +143,7 @@ public class PickupSubsystem extends SubsystemBase {
           stopMotors();
           retractRoller();
         }),
-        Commands.waitSeconds(0.5),
+        Commands.waitSeconds(0.25),
         this.runOnce(this::retractPickup)
     );
   }

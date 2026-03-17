@@ -2,12 +2,12 @@ package frc.robot.commands;
 
 import java.util.function.DoubleSupplier;
 
+import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 
-// Make sure to import Constants so we can use your new VisionConstants!
-import frc.robot.Constants; 
+import frc.robot.Constants;
 import frc.robot.subsystems.DriveSubsystem;
 import frc.robot.subsystems.ShooterSubsystem;
 import frc.robot.subsystems.VisionSubsystem;
@@ -19,67 +19,88 @@ public class AimAndRevCommand extends Command {
 
     private final DoubleSupplier m_translationXSupplier;
     private final DoubleSupplier m_translationYSupplier;
-    private final DoubleSupplier m_manualRotationSupplier; 
+    private final DoubleSupplier m_manualRotationSupplier;
 
     private final PIDController m_turnPID;
 
     public AimAndRevCommand(
-            DriveSubsystem drive, 
-            VisionSubsystem vision, 
+            DriveSubsystem drive,
+            VisionSubsystem vision,
             ShooterSubsystem shooter,
-            DoubleSupplier translationXSupplier, 
+            DoubleSupplier translationXSupplier,
             DoubleSupplier translationYSupplier,
-            DoubleSupplier manualRotationSupplier) { 
-        
-        this.m_drive = drive;
-        this.m_vision = vision;
-        this.m_shooter = shooter;
-        this.m_translationXSupplier = translationXSupplier;
-        this.m_translationYSupplier = translationYSupplier;
-        this.m_manualRotationSupplier = manualRotationSupplier;
+            DoubleSupplier manualRotationSupplier) {
 
-        // 1. Create the PID Controller FIRST
-        m_turnPID = new PIDController(0.05, 0.0, 0.005);
+        m_drive = drive;
+        m_vision = vision;
+        m_shooter = shooter;
+        m_translationXSupplier = translationXSupplier;
+        m_translationYSupplier = translationYSupplier;
+        m_manualRotationSupplier = manualRotationSupplier;
+
+        m_turnPID = new PIDController(0.01, 0.0, 0.001);
+        m_turnPID.setTolerance(1.0);
         m_turnPID.setSetpoint(0.0);
 
-        // 2. Dashboard tuning values (Permanent)
         SmartDashboard.putNumber("Aim/kP", m_turnPID.getP());
         SmartDashboard.putNumber("Aim/kD", m_turnPID.getD());
         SmartDashboard.putNumber("Aim/YawOffsetTarget", 0.0);
+        SmartDashboard.putBoolean("Aim/UseAllianceTagCheck", false);
+        SmartDashboard.putNumber("Aim/MaxTurnSpeed", 0.30);
 
         addRequirements(m_drive, m_shooter);
     }
 
     @Override
     public void initialize() {
-
+        m_turnPID.reset();
     }
 
-    @Override
-    public void execute() {
-        // 1. Update PID constants from dashboard tuning
-        m_turnPID.setP(SmartDashboard.getNumber("Aim/kP", m_turnPID.getP()));
-        m_turnPID.setD(SmartDashboard.getNumber("Aim/kD", m_turnPID.getD()));
+@Override
+public void execute() {
+    m_turnPID.setP(SmartDashboard.getNumber("Aim/kP", m_turnPID.getP()));
+    m_turnPID.setD(SmartDashboard.getNumber("Aim/kD", m_turnPID.getD()));
 
-        double commandedDistance = -1.0;
-        String shooterMode = "UNKNOWN";
+    double translationX = m_translationXSupplier.getAsDouble();
+    double translationY = m_translationYSupplier.getAsDouble();
+    double manualRotation = m_manualRotationSupplier.getAsDouble();
 
-        boolean hasTarget = m_vision.hasTarget();
-        SmartDashboard.putBoolean("Aim/Seeing Target", hasTarget);
-
-        double translationX = m_translationXSupplier.getAsDouble();
-        double translationY = m_translationYSupplier.getAsDouble();
-        double rotationSpeed;
-
- if (hasTarget) {
+    boolean hasTarget = m_vision.hasTarget();
     int targetID = m_vision.getTargetID();
+    double tx = m_vision.getYawOffset();
 
-    if (Constants.VisionConstants.isOurAllianceTag(targetID)) {
+    boolean useAllianceCheck = SmartDashboard.getBoolean("Aim/UseAllianceTagCheck", false);
+    boolean tagAllowed = !useAllianceCheck || Constants.VisionConstants.isOurAllianceTag(targetID);
+
+    double rotationSpeed = manualRotation;
+    double commandedDistance = -1.0;
+    String shooterMode = "NO_TARGET";
+
+    var alliance = edu.wpi.first.wpilibj.DriverStation.getAlliance();
+    String allianceString = alliance.isEmpty() ? "EMPTY" : alliance.get().toString();
+
+    SmartDashboard.putString("Aim/Diag_Alliance", allianceString);
+    SmartDashboard.putBoolean("Aim/Seeing Target", hasTarget);
+    SmartDashboard.putNumber("Aim/Diag_SeenID", targetID);
+    SmartDashboard.putBoolean("Aim/Diag_IsOurTag", Constants.VisionConstants.isOurAllianceTag(targetID));
+    SmartDashboard.putNumber("Aim/tx", tx);
+
+    if (hasTarget && Constants.VisionConstants.isOurAllianceTag(targetID)) {
         double bullseye = SmartDashboard.getNumber("Aim/YawOffsetTarget", 0.0);
-        bullseye += Constants.VisionConstants.getHubOffset(targetID);
+
+        if (useAllianceCheck) {
+            bullseye += Constants.VisionConstants.getHubOffset(targetID);
+        }
 
         m_turnPID.setSetpoint(bullseye);
-        rotationSpeed = m_turnPID.calculate(m_vision.getYawOffset());
+
+        double rawTurn = m_turnPID.calculate(tx);
+        double maxTurn = SmartDashboard.getNumber("Aim/MaxTurnSpeed", 0.30);
+        rotationSpeed = MathUtil.clamp(rawTurn, -maxTurn, maxTurn);
+
+        if (m_turnPID.atSetpoint()) {
+            rotationSpeed = 0.0;
+        }
 
         double distance = m_vision.getDistanceToTarget();
         commandedDistance = distance;
@@ -87,41 +108,48 @@ public class AimAndRevCommand extends Command {
         m_shooter.setSpeedFromDistance(distance);
 
         SmartDashboard.putString("Aim/Status", "LOCKED ON ID: " + targetID);
-    } else {
+        SmartDashboard.putNumber("Aim/Setpoint", bullseye);
+        SmartDashboard.putNumber("Aim/Error", bullseye - tx);
+        SmartDashboard.putNumber("Aim/RotCmd", rotationSpeed);
+    } else if (hasTarget) {
         rotationSpeed = m_manualRotationSupplier.getAsDouble();
-        commandedDistance = 1.5;
+        commandedDistance = 2.5;
         shooterMode = "WRONG_TAG";
-        m_shooter.setSpeedFromDistance(1.5);
+        m_shooter.setSpeedFromDistance(2.5);
 
         SmartDashboard.putString("Aim/Status", "WRONG TAG (ID " + targetID + ")");
+        SmartDashboard.putNumber("Aim/Setpoint", 0.0);
+        SmartDashboard.putNumber("Aim/Error", 0.0);
+        SmartDashboard.putNumber("Aim/RotCmd", rotationSpeed);
+    } else {
+        rotationSpeed = m_manualRotationSupplier.getAsDouble();
+        commandedDistance = 2.5;
+        shooterMode = "NO_TARGET";
+        m_shooter.setSpeedFromDistance(2.5);
+
+        SmartDashboard.putString("Aim/Status", "NO TARGET");
+        SmartDashboard.putNumber("Aim/Setpoint", 0.0);
+        SmartDashboard.putNumber("Aim/Error", 0.0);
+        SmartDashboard.putNumber("Aim/RotCmd", rotationSpeed);
     }
-} else {
-    rotationSpeed = m_manualRotationSupplier.getAsDouble();
-    commandedDistance = -1.0;
-    shooterMode = "NO_TARGET";
-    m_shooter.setSpeedFromDistance(-1.0);
 
-    SmartDashboard.putString("Aim/Status", "NO TARGET");
-}
+    SmartDashboard.putString("Aim/ShooterMode", shooterMode);
+    SmartDashboard.putNumber("Aim/CommandedDistance", commandedDistance);
 
-SmartDashboard.putString("Aim/ShooterMode", shooterMode);
-SmartDashboard.putNumber("Aim/CommandedDistance", commandedDistance);
-        
-
-        // Apply everything to the Swerve Drive
-        m_drive.drive(translationX, translationY, rotationSpeed, true);
+    m_drive.drive(translationX, translationY, rotationSpeed, false);
 }
 
     @Override
     public void end(boolean interrupted) {
         m_drive.drive(0, 0, 0, false);
         m_shooter.stopShooter();
-        
+        m_turnPID.reset();
+
         System.out.println(">>> AimAndRevCommand ENDED. Interrupted: " + interrupted);
     }
 
     @Override
     public boolean isFinished() {
-        return false; 
+        return false;
     }
 }
