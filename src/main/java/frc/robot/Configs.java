@@ -1,6 +1,6 @@
 package frc.robot;
 
-import com.revrobotics.spark.config.SparkMaxConfig;
+import com.revrobotics.spark.config.SparkFlexConfig;
 import com.revrobotics.spark.FeedbackSensor;
 import com.revrobotics.spark.config.AbsoluteEncoderConfig;
 import com.revrobotics.spark.config.SparkBaseConfig.IdleMode;
@@ -11,11 +11,11 @@ public final class Configs {
 
     public static final class MAXSwerveModule {
 
-        public static final SparkMaxConfig drivingConfig = new SparkMaxConfig();
-        public static final SparkMaxConfig turningConfig = new SparkMaxConfig();
+        // Both drive and turning use SparkFlex (Vortex drive, Neo 550 turning via Flex Dock)
+        public static final SparkFlexConfig drivingConfig = new SparkFlexConfig();
+        public static final SparkFlexConfig turningConfig = new SparkFlexConfig();
 
         static {
-
             // Conversion factors
             double drivingFactor =
                     ModuleConstants.kWheelDiameterMeters * Math.PI /
@@ -23,11 +23,8 @@ public final class Configs {
 
             double turningFactor = 2 * Math.PI;
 
-            double nominalVoltage = 12.0;
-
-            double drivingVelocityFeedForward =
-                    nominalVoltage / ModuleConstants.kDriveWheelFreeSpeedRps;
-
+            // kVelocity outputs duty cycle (-1 to 1), so kV = 1.0 / FreeSpeedRps
+            double drivingVelocityFeedForward = 1.0 / ModuleConstants.kDriveWheelFreeSpeedRps;
 
             /* -------------------- DRIVE MOTOR CONFIG -------------------- */
 
@@ -36,7 +33,7 @@ public final class Configs {
                     .smartCurrentLimit(50);
 
             drivingConfig.encoder
-                    .positionConversionFactor(drivingFactor)        // meters
+                    .positionConversionFactor(drivingFactor)         // meters
                     .velocityConversionFactor(drivingFactor / 60.0); // meters/sec
 
             drivingConfig.closedLoop
@@ -44,7 +41,6 @@ public final class Configs {
                     .pid(0.04, 0, 0)
                     .outputRange(-1, 1)
                     .feedForward.kV(drivingVelocityFeedForward);
-
 
             /* -------------------- TURN MOTOR CONFIG -------------------- */
 
@@ -54,7 +50,7 @@ public final class Configs {
 
             turningConfig.absoluteEncoder
                     .inverted(true)  // required for MAXSwerve module geometry
-                    .positionConversionFactor(turningFactor)       // radians
+                    .positionConversionFactor(turningFactor)        // radians
                     .velocityConversionFactor(turningFactor / 60.0)
                     .apply(AbsoluteEncoderConfig.Presets.REV_ThroughBoreEncoderV2);
 

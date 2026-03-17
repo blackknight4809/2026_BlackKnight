@@ -3,10 +3,6 @@ package frc.robot.subsystems;
 import com.studica.frc.AHRS;
 import com.studica.frc.AHRS.NavXComType;
 import com.pathplanner.lib.auto.AutoBuilder;
-
-import com.pathplanner.lib.config.PIDConstants;
-import com.pathplanner.lib.auto.AutoBuilder;
-import com.pathplanner.lib.config.RobotConfig;
 import com.pathplanner.lib.config.PIDConstants;
 import com.pathplanner.lib.config.RobotConfig;
 import com.pathplanner.lib.controllers.PPHolonomicDriveController;
@@ -14,8 +10,6 @@ import com.pathplanner.lib.controllers.PPHolonomicDriveController;
 import edu.wpi.first.hal.FRCNetComm.tInstances;
 import edu.wpi.first.hal.FRCNetComm.tResourceType;
 import edu.wpi.first.hal.HAL;
-import edu.wpi.first.wpilibj.Preferences;
-import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.estimator.SwerveDrivePoseEstimator;
 import edu.wpi.first.math.geometry.Pose2d;
@@ -38,33 +32,38 @@ import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import frc.robot.Constants.DriveConstants;
 
 public class DriveSubsystem extends SubsystemBase {
+
   // Modules
-private final MAXSwerveModule m_frontLeft = new MAXSwerveModule(
-    DriveConstants.kFrontLeftDrivingCanId,
-    DriveConstants.kFrontLeftTurningCanId,
-    DriveConstants.kFrontLeftChassisAngularOffset,
-    false);
+  private final MAXSwerveModule m_frontLeft = new MAXSwerveModule(
+      DriveConstants.kFrontLeftDrivingCanId,
+      DriveConstants.kFrontLeftTurningCanId,
+      DriveConstants.kFrontLeftChassisAngularOffset,
+      DriveConstants.kFrontLeftDriveInverted,
+      "FL");
 
-private final MAXSwerveModule m_frontRight = new MAXSwerveModule(
-    DriveConstants.kFrontRightDrivingCanId,
-    DriveConstants.kFrontRightTurningCanId,
-    DriveConstants.kFrontRightChassisAngularOffset,
-    false);
+  private final MAXSwerveModule m_frontRight = new MAXSwerveModule(
+      DriveConstants.kFrontRightDrivingCanId,
+      DriveConstants.kFrontRightTurningCanId,
+      DriveConstants.kFrontRightChassisAngularOffset,
+      DriveConstants.kFrontRightDriveInverted,
+      "FR");
 
-private final MAXSwerveModule m_rearLeft = new MAXSwerveModule(
-    DriveConstants.kRearLeftDrivingCanId,
-    DriveConstants.kRearLeftTurningCanId,
-    DriveConstants.kBackLeftChassisAngularOffset,
-    false);
+  private final MAXSwerveModule m_rearLeft = new MAXSwerveModule(
+      DriveConstants.kRearLeftDrivingCanId,
+      DriveConstants.kRearLeftTurningCanId,
+      DriveConstants.kBackLeftChassisAngularOffset,
+      DriveConstants.kBackLeftDriveInverted,
+      "BL");
 
-private final MAXSwerveModule m_rearRight = new MAXSwerveModule(
-    DriveConstants.kRearRightDrivingCanId,
-    DriveConstants.kRearRightTurningCanId,
-    DriveConstants.kBackRightChassisAngularOffset,
-    false);
-
+  private final MAXSwerveModule m_rearRight = new MAXSwerveModule(
+      DriveConstants.kRearRightDrivingCanId,
+      DriveConstants.kRearRightTurningCanId,
+      DriveConstants.kBackRightChassisAngularOffset,
+      DriveConstants.kBackRightDriveInverted,
+      "BR");
 
   private final VisionSubsystem m_vision;
+
   // Gyro (Studica navX)
   private final AHRS m_gyro = new AHRS(NavXComType.kMXP_SPI);
 
@@ -74,54 +73,42 @@ private final MAXSwerveModule m_rearRight = new MAXSwerveModule(
   // Pose estimator (odometry + vision fusion)
   private final SwerveDrivePoseEstimator m_poseEstimator;
 
-  // Dashboard keys (new + old aliases)
-  private static final String kXLockEnabledKey     = "Drive/XLockEnabled";
-  private static final String kSpeedLimitKey       = "Drive/SpeedLimit";
-  private static final String kXLockEnabledKeyOld  = "XLockEnabled";
-  private static final String kSpeedLimitKeyOld    = "SpeedLimit";
-
-  private static final String kVisionMinTaKey = "Vision/MinTA";
+  private static final String kVisionMinTaKey      = "Vision/MinTA";
   private static final String kVisionMaxTurnRateKey = "Vision/MaxTurnRateDps";
-  private static final String kVisionXYStdDevKey = "Vision/XYStdDevM";
+  private static final String kVisionXYStdDevKey   = "Vision/XYStdDevM";
 
   public DriveSubsystem(VisionSubsystem vision) {
-    this.m_vision = vision; // Save it for later
+    this.m_vision = vision;
     HAL.report(tResourceType.kResourceType_RobotDrive, tInstances.kRobotDriveSwerve_MaxSwerve);
 
     SmartDashboard.putData("Field", m_field);
 
-    // Publish defaults WITHOUT overwriting existing dashboard values
-    Preferences.initBoolean(kXLockEnabledKey, false);
-    Preferences.initDouble(kSpeedLimitKey, 1.0);
-
     SmartDashboard.putNumber(kVisionMinTaKey, 0.1);
     SmartDashboard.putNumber(kVisionMaxTurnRateKey, 90.0);
     SmartDashboard.putNumber(kVisionXYStdDevKey, 0.5);
-    
 
-   RobotConfig config;
-try {
-  config = RobotConfig.fromGUISettings();
-} catch (Exception e) {
-  throw new RuntimeException("Failed to load PathPlanner RobotConfig from GUI settings", e);
-}
+    RobotConfig config;
+    try {
+      config = RobotConfig.fromGUISettings();
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to load PathPlanner RobotConfig from GUI settings", e);
+    }
 
-AutoBuilder.configure(
-    this::getPose,                 // Robot pose supplier
-    this::resetOdometry,           // Reset odometry to a given pose
-    this::getRobotRelativeSpeeds,  // MUST be robot-relative
-    (speeds, feedforwards) -> driveRobotRelative(speeds), // robot-relative output
-    new PPHolonomicDriveController(
-        new PIDConstants(5.0, 0.0, 0.0), // Translation PID
-        new PIDConstants(5.0, 0.0, 0.0)  // Rotation PID
-    ),
-    config,
-    () -> DriverStation.getAlliance().isPresent()
-          && DriverStation.getAlliance().get() == DriverStation.Alliance.Red,
-    this
-);
+    AutoBuilder.configure(
+        this::getPose,
+        this::resetOdometry,
+        this::getRobotRelativeSpeeds,
+        (speeds, feedforwards) -> driveRobotRelative(speeds),
+        new PPHolonomicDriveController(
+            new PIDConstants(5.0, 0.0, 0.0),
+            new PIDConstants(5.0, 0.0, 0.0)
+        ),
+        config,
+        () -> DriverStation.getAlliance().isPresent()
+              && DriverStation.getAlliance().get() == DriverStation.Alliance.Red,
+        this
+    );
 
-    // Make current facing be "0"
     m_gyro.zeroYaw();
 
     m_poseEstimator = new SwerveDrivePoseEstimator(
@@ -141,7 +128,6 @@ AutoBuilder.configure(
 
   /** Single source of truth for heading used everywhere. */
   private Rotation2d getGyroRotation() {
-    // Continuous + WPILib-friendly sign
     return Rotation2d.fromDegrees(-m_gyro.getAngle());
   }
 
@@ -157,7 +143,7 @@ AutoBuilder.configure(
         });
 
     fuseLimelightPose();
-    //DriveTrain SmartDashboard Values
+
     SmartDashboard.putNumber("FL Angle Deg", m_frontLeft.getMeasuredAngle().getDegrees());
     SmartDashboard.putNumber("FR Angle Deg", m_frontRight.getMeasuredAngle().getDegrees());
     SmartDashboard.putNumber("BL Angle Deg", m_rearLeft.getMeasuredAngle().getDegrees());
@@ -174,33 +160,20 @@ AutoBuilder.configure(
     m_field.setRobotPose(est);
   }
 
- /** Read botpose from VisionSubsystem and add it as a vision measurement when valid. */
   private void fuseLimelightPose() {
-    // 1. Check if we even have a target and if the target area is large enough to trust
     double minTa = SmartDashboard.getNumber(kVisionMinTaKey, 0.1);
-    if (!m_vision.hasTarget() || m_vision.getTargetArea() < minTa) {
-      return;
-    }
+    if (!m_vision.hasTarget() || m_vision.getTargetArea() < minTa) return;
 
-    // 2. Don't trust vision if we are spinning super fast (motion blur!)
     double maxTurn = SmartDashboard.getNumber(kVisionMaxTurnRateKey, 90.0);
-    if (Math.abs(getTurnRate()) > maxTurn) {
-      return;
-    }
+    if (Math.abs(getTurnRate()) > maxTurn) return;
 
-    // 3. Ask VisionSubsystem for the calculated pose and timestamp
     var visionMeasurement = m_vision.getEstimatedGlobalPose(getGyroRotation());
-    if (visionMeasurement == null) {
-      return;
-    }
+    if (visionMeasurement == null) return;
 
-    // 4. Reject old data
     double now = Timer.getFPGATimestamp();
-    if (visionMeasurement.timestampSeconds() > now || (now - visionMeasurement.timestampSeconds()) > 0.5) {
-      return;
-    }
+    if (visionMeasurement.timestampSeconds() > now
+        || (now - visionMeasurement.timestampSeconds()) > 0.5) return;
 
-    // 5. Send it to the pose estimator
     addVisionMeasurement(visionMeasurement.pose(), visionMeasurement.timestampSeconds());
   }
 
@@ -232,26 +205,9 @@ AutoBuilder.configure(
   }
 
   public void drive(double xSpeed, double ySpeed, double rot, boolean fieldRelative) {
-    // Read old widgets if they exist, otherwise use new keys
-boolean xLockEnabled =
-    Preferences.getBoolean(kXLockEnabledKey, false);
-
-double speedLimit =
-    Preferences.getDouble(kSpeedLimitKey, 1.0);
-
-speedLimit = MathUtil.clamp(speedLimit, 0.0, 1.0);
-
-    if (xLockEnabled
-        && Math.abs(xSpeed) < 0.05
-        && Math.abs(ySpeed) < 0.05
-        && Math.abs(rot) < 0.05) {
-      setX();
-      return;
-    }
-
-    double xSpeedDelivered = xSpeed * DriveConstants.kMaxSpeedMetersPerSecond * speedLimit;
-    double ySpeedDelivered = ySpeed * DriveConstants.kMaxSpeedMetersPerSecond * speedLimit;
-    double rotDelivered = rot * DriveConstants.kMaxAngularSpeed * speedLimit;
+    double xSpeedDelivered = xSpeed * DriveConstants.kMaxSpeedMetersPerSecond;
+    double ySpeedDelivered = ySpeed * DriveConstants.kMaxSpeedMetersPerSecond;
+    double rotDelivered    = rot   * DriveConstants.kMaxAngularSpeed;
 
     SwerveModuleState[] states =
         DriveConstants.kDriveKinematics.toSwerveModuleStates(
@@ -262,17 +218,17 @@ speedLimit = MathUtil.clamp(speedLimit, 0.0, 1.0);
 
     SwerveDriveKinematics.desaturateWheelSpeeds(states, DriveConstants.kMaxSpeedMetersPerSecond);
 
-    m_frontLeft.setDesiredState(states[0]);
-    m_frontRight.setDesiredState(states[1]);
-    m_rearLeft.setDesiredState(states[2]);
-    m_rearRight.setDesiredState(states[3]);
+    m_frontLeft.setDesiredState(states[0], false);
+    m_frontRight.setDesiredState(states[1], false);
+    m_rearLeft.setDesiredState(states[2], false);
+    m_rearRight.setDesiredState(states[3], false);
   }
 
   public void setX() {
-    m_frontLeft.setDesiredState(new SwerveModuleState(0, Rotation2d.fromDegrees(45)), true);
+    m_frontLeft.setDesiredState(new SwerveModuleState(0, Rotation2d.fromDegrees(45)),   true);
     m_frontRight.setDesiredState(new SwerveModuleState(0, Rotation2d.fromDegrees(-45)), true);
-    m_rearLeft.setDesiredState(new SwerveModuleState(0, Rotation2d.fromDegrees(-45)), true);
-    m_rearRight.setDesiredState(new SwerveModuleState(0, Rotation2d.fromDegrees(45)), true);
+    m_rearLeft.setDesiredState(new SwerveModuleState(0, Rotation2d.fromDegrees(-45)),   true);
+    m_rearRight.setDesiredState(new SwerveModuleState(0, Rotation2d.fromDegrees(45)),   true);
   }
 
   public void zeroHeading() {
@@ -285,41 +241,33 @@ speedLimit = MathUtil.clamp(speedLimit, 0.0, 1.0);
 
   public double getTurnRate() {
     double rateDps = m_gyro.getRate();
-    rateDps *= (DriveConstants.kGyroReversed ? -1.0 : 1.0);
-    return rateDps;
+    return rateDps * (DriveConstants.kGyroReversed ? -1.0 : 1.0);
   }
-// PathPlanner wants robot-relative chassis speeds (m/s, m/s, rad/s)
-public ChassisSpeeds getRobotRelativeSpeeds() {
-  return DriveConstants.kDriveKinematics.toChassisSpeeds(
-      m_frontLeft.getState(),
-      m_frontRight.getState(),
-      m_rearLeft.getState(),
-      m_rearRight.getState()
-  );
-}
 
-// PathPlanner will call this to actually move the robot during auto
-public void driveRobotRelative(ChassisSpeeds speeds) {
-  SwerveModuleState[] states =
-      DriveConstants.kDriveKinematics.toSwerveModuleStates(speeds);
+  public ChassisSpeeds getRobotRelativeSpeeds() {
+    return DriveConstants.kDriveKinematics.toChassisSpeeds(
+        m_frontLeft.getState(),
+        m_frontRight.getState(),
+        m_rearLeft.getState(),
+        m_rearRight.getState());
+  }
 
-  SwerveDriveKinematics.desaturateWheelSpeeds(states, DriveConstants.kMaxSpeedMetersPerSecond);
+  public void driveRobotRelative(ChassisSpeeds speeds) {
+    SwerveModuleState[] states =
+        DriveConstants.kDriveKinematics.toSwerveModuleStates(speeds);
 
-  m_frontLeft.setDesiredState(states[0]);
-  m_frontRight.setDesiredState(states[1]);
-  m_rearLeft.setDesiredState(states[2]);
-  m_rearRight.setDesiredState(states[3]);
-}
+    SwerveDriveKinematics.desaturateWheelSpeeds(states, DriveConstants.kMaxSpeedMetersPerSecond);
 
-/**
- * Changes the Limelight LED mode.
- * @param mode 1 for OFF, 3 for ON.
- */
-public void setLimelightLED(int mode) {
-  NetworkTableInstance.getDefault()
-    .getTable("limelight")
-    .getEntry("ledMode")
-    .setNumber(mode);
-}
+    m_frontLeft.setDesiredState(states[0], false);
+    m_frontRight.setDesiredState(states[1], false);
+    m_rearLeft.setDesiredState(states[2], false);
+    m_rearRight.setDesiredState(states[3], false);
+  }
 
+  public void setLimelightLED(int mode) {
+    NetworkTableInstance.getDefault()
+        .getTable("limelight")
+        .getEntry("ledMode")
+        .setNumber(mode);
+  }
 }
